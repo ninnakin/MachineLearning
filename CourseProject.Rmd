@@ -1,0 +1,143 @@
+---
+title: "Course project for machine learning"
+author: "Kristina Juhlin"
+date: "11 november 2015"
+output: html_document
+---
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r loadData, echo=FALSE, cache=TRUE, message=FALSE}
+library(caret)
+library(dplyr)
+library(gridExtra)
+
+if (!file.exists("pml-training.csv")){
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","pml-training.csv")
+}
+training_org<- read.csv("pml-training.csv", header = TRUE, na.strings = c("","NA"))
+
+```
+
+To do:
+
+### Explore 
+
+- Number of NAs per feature
+- Which features seem to be most important based on documentation?
+
+### Feature selection/engineering 
+
+- Normalizing features? 
+- Imputing missing values?
+- PCA analysis? 
+
+### Choice of algorithm 
+
+- Decision trees? 
+- knn?
+
+### Fitting model 
+
+- cross validation
+
+
+```{r explore, echo=FALSE}
+names(training_org)
+summary(training_org)
+
+str(training_org)
+
+# count NAs
+# Either 0 missing or 19 000, no idea to impute when so much missing, exclude from set instead.
+missing <- apply(training_org, 2, function(x) sum(is.na(x)));
+
+max_miss <- max(missing); 
+sum(training_org$new_window=="no")
+# Number of non-missing values for these covariates are the same as the number of new windows.
+# These features are probably only defined for new windows. 
+# All testdata is for new_window="no", so ignore these
+training = training_org[,missing==0];
+
+summary(training_org)
+# looks like a lot of the values for yaw variables are not available
+yaws <- training[,grep("yaw",names(training))];
+summary(yaws)
+
+# throw out time-data
+training<- training[,-grep("timestamp",names(training))]
+training<- training[,-grep("window",names(training))]
+training<- training[,-c(1,2)]
+```
+
+
+```{r meanPerClass, echo=FALSE}
+
+means <- training %>% group_by(classe) %>% summarise_each(funs(mean))
+medians <- training %>% group_by(classe) %>% summarise_each(funs(median))
+```
+
+
+```{r carlitos, echo=FALSE, cache=TRUE}
+
+# look at one activity for one participant
+
+carlitos <- filter(training, user_name=="carlitos" & classe=="A");
+head(select(carlitos,raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window),10)
+
+# Look at one window 
+carlitos %>% select(raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window) %>% filter(num_window==12)
+```
+
+
+
+
+```{r, echo=FALSE, cache=TRUE}
+
+# Number of time windows for each participant and event type
+t <- count(training, num_window, classe, user_name);
+
+# Number of new windows for each user and classe
+t2 <- training %>% filter(new_window=="yes") %>% count(classe, user_name);
+
+ggplot(data=t2, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_point()
+
+```
+
+```{r armMoves, echo=FALSE, cache=TRUE}
+
+arm<-training[,grep("_arm",names(training))]
+forearm<-training[,grep("forearm",names(training))]
+dumbbell<-training[,grep("dumbbell",names(training))]
+belt<-training[,grep("belt",names(training))]
+
+summary(prc)
+prc<-prcomp(training[,-c(1,2,55)])
+plot(prc$x[,1], prc$x[,2], col=training$classe)
+
+ggplot(training, aes(x=yaw_belt, y=yaw_arm)) + geom_point() + facet_grid(user_name ~ classe)
+
+
+prc<-prcomp(arm)
+pc <- as.data.frame(prc$x[,1:2])
+g1<- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+
+prc<-prcomp(forearm)
+pc <- as.data.frame(prc$x[,1:2])
+g2 <- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+
+prc<-prcomp(dumbbell)
+pc <- as.data.frame(prc$x[,1:2])
+g3 <- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+
+prc<-prcomp(belt)
+pc <- as.data.frame(prc$x[,1:2])
+g4 <- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+
+grid.arrange(g1, g2, g3, g4, nrow=2)
+
+```
+
+
