@@ -32,7 +32,17 @@ To do:
 
 - Normalizing features? 
 - Imputing missing values?
+- Identify outliers?
+- Strongly correlated values?
+```{r cor, echo=FALSE, cache=TRUE, message=FALSE}
+
+cor(training$roll_belt, training$total_accel_belt)
+
+hist(training$total_accel_belt)
+
+```
 - PCA analysis? 
+- Use user_name as predictor? Or to standardize? 
 
 ### Choice of algorithm 
 
@@ -115,26 +125,36 @@ belt<-training[,grep("belt",names(training))]
 
 summary(prc)
 prc<-prcomp(training[,-c(1,2,55)])
-plot(prc$x[,1], prc$x[,2], col=training$classe)
-
-ggplot(training, aes(x=yaw_belt, y=yaw_arm)) + geom_point() + facet_grid(user_name ~ classe)
-
+pc <- as.data.frame(prc$x[,1:10])
+pc$user_name <- training$user_name;
+pc$classe <- training$classe
+ggplot(pc, aes(x=PC1, y=PC2, col=classe))+geom_point()+ facet_grid(. ~ classe)
+ggplot(pc, aes(x=PC3, y=PC4, col=classe))+geom_point()+ facet_grid(. ~ classe)
+ggplot(pc, aes(x=PC5, y=PC6, col=classe))+geom_point()+ facet_grid(. ~ classe)
 
 prc<-prcomp(arm)
 pc <- as.data.frame(prc$x[,1:2])
-g1<- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+pc$user_name <- training$user_name;
+pc$classe <- training$classe
+g1<- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
 
 prc<-prcomp(forearm)
 pc <- as.data.frame(prc$x[,1:2])
-g2 <- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+pc$user_name <- training$user_name;
+pc$classe <- training$classe
+g2 <- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
 
 prc<-prcomp(dumbbell)
 pc <- as.data.frame(prc$x[,1:2])
-g3 <- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+pc$user_name <- training$user_name;
+pc$classe <- training$classe
+g3 <- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
 
 prc<-prcomp(belt)
 pc <- as.data.frame(prc$x[,1:2])
-g4 <- ggplot(pc, aes(x=PC1, y=PC2, col=training$classe))+geom_point()
+pc$user_name <- training$user_name;
+pc$classe <- training$classe
+g4 <- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
 
 grid.arrange(g1, g2, g3, g4, nrow=2)
 
