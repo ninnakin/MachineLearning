@@ -4,91 +4,123 @@ author: "Kristina Juhlin"
 date: "11 november 2015"
 output: html_document
 ---
+## Project  task
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## Introduction 
+The aim of this project is to classify a number of performed excercises as correctly or incorrectly executed. If incorrectly executed, I will identify in which if four possible ways they are faulting. 
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r loadData, echo=FALSE, cache=TRUE, message=FALSE}
+```{r libraries, echo=FALSE, cache=TRUE, message=FALSE}
 library(caret)
 library(dplyr)
 library(gridExtra)
+library(doParallel)
+library(gbm)
+library(randomForest)
+library(foreach)
+library(knitr)
+```
 
+## Data 
+This project uses the weight lifting excercise dataset collected by [Vellosso et al] (http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201) which includes measurements of arm, forearm, hip and dumbbell movements while performing a weightlifting excercise. The excercises are classified as correctly (class A) performed or wrongly performed in one of the following ways: throwing the elbows to the front (class B), lifting the dumbbell only halfway (class C), lowering the dumbbell only halfway (class D) and throwing the hips to the front (class E).
+
+```{r loadData, echo=FALSE, cache=TRUE, message=FALSE}
 if (!file.exists("pml-training.csv")){
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","pml-training.csv")
 }
-training_org<- read.csv("pml-training.csv", header = TRUE, na.strings = c("","NA"))
+pml_data<- read.csv("pml-training.csv", header = TRUE, na.strings = c("","NA"))
 
+levels(pml_data$classe)<-c("Correct", "ElbowsFront", "LiftHalf", "LowHalf", "HipsFront")
 ```
 
-To do:
+## Creating the predictive model
 
-### Explore 
+### Test and training set
+I divided the 19622 samples into a training set (60% of samples) and a testin set (40% of samples). Exploratory analysis was then performed on the samples in the training set. 
 
-- Number of NAs per feature
-- Which features seem to be most important based on documentation?
+```{r createSets, echo=FALSE, cache=TRUE, message=FALSE}
+# Divide data into training and testing set 
+set.seed(1000)
+inTrain = createDataPartition(pml_data$classe, p = 0.6)[[1]]
 
-### Feature selection/engineering 
-
-- Normalizing features? 
-- Imputing missing values?
-- Identify outliers?
-- Strongly correlated values?
-```{r cor, echo=FALSE, cache=TRUE, message=FALSE}
-
-cor(training$roll_belt, training$total_accel_belt)
-
-hist(training$total_accel_belt)
-
+training = pml_data[ inTrain,]
+testing  = pml_data[-inTrain,]
 ```
-- PCA analysis? 
-- Use user_name as predictor? Or to standardize? 
 
-### Choice of algorithm 
-
-- Decision trees? 
-- knn?
-
-### Fitting model 
-
-- cross validation
+### Exploratory analysis 
 
 
 ```{r explore, echo=FALSE}
-names(training_org)
-summary(training_org)
-
-str(training_org)
+names(training)
+summary(training)
+str(training)
 
 # count NAs
 # Either 0 missing or 19 000, no idea to impute when so much missing, exclude from set instead.
-missing <- apply(training_org, 2, function(x) sum(is.na(x)));
+missing <- apply(training, 2, function(x) sum(is.na(x)));
 
-max_miss <- max(missing); 
-sum(training_org$new_window=="no")
-# Number of non-missing values for these covariates are the same as the number of new windows.
-# These features are probably only defined for new windows. 
-# All testdata is for new_window="no", so ignore these
-training = training_org[,missing==0];
-
-summary(training_org)
-# looks like a lot of the values for yaw variables are not available
-yaws <- training[,grep("yaw",names(training))];
-summary(yaws)
-
-# throw out time-data
-training<- training[,-grep("timestamp",names(training))]
-training<- training[,-grep("window",names(training))]
-training<- training[,-c(1,2)]
+summary(missing)
+sum(training$new_window=="yes")
 ```
 
+```{r windows, echo=FALSE, cache=TRUE}
+
+# Number of time windows for each participant and event type
+t <- count(training, num_window, classe, user_name);
+
+# Number of new windows for each user and classe
+t2 <- training %>% filter(new_window=="yes") %>% count(classe, user_name);
+
+ggplot(data=t2, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_point()
+
+```
+
+```{r processData, echo=FALSE, cache=TRUE, message=FALSE}
+# exclude missing values and time data
+removeColumns <- function(data){
+    data <- data[,-grep("timestamp",names(data))]
+    data <- data[,-grep("window",names(data))]
+    data <- data[,-grep("user_name",names(data))]
+    data <- data[,-grep("X",names(data))] 
+}
+training <- removeColumns(training)
+
+# remove correlated columns
+training.class <- training$classe
+training$classe<-NULL;
+missing <- apply(training, 2, function(x) sum(is.na(x)));
+training<- training[,missing==0];
+
+numerics <- sapply(training, is.numeric)
+correlationMatrix <- cor(training[,numerics])
+correlated <- findCorrelation(correlationMatrix, cutoff=0.9)
+training <- training[,-correlated]
+training<-sapply(training,as.numeric);
+
+# Transform test data in same way
+testing.class <- testing$classe
+testing$classe<-NULL;
+testing <- removeColumns(testing)
+testing <- testing[,missing==0];
+testing <- testing[,-correlated]
+testing<-sapply(testing,as.numeric);
+```
+
+```{r cor, echo=FALSE, cache=TRUE, message=FALSE}
+
+# identify correlated features 
+correlationMatrix <- cor(training[,1:52])
+correlated <- findCorrelation(correlationMatrix, cutoff=0.9)
+
+# delete feature with correlation>=0.9
+# they provide little extra information and slow down model making 
+```
 
 ```{r meanPerClass, echo=FALSE}
 
 means <- training %>% group_by(classe) %>% summarise_each(funs(mean))
 medians <- training %>% group_by(classe) %>% summarise_each(funs(median))
 ```
-
 
 ```{r carlitos, echo=FALSE, cache=TRUE}
 
@@ -103,61 +135,211 @@ carlitos %>% select(raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, 
 
 
 
+To do:
 
-```{r, echo=FALSE, cache=TRUE}
+### Explore 
 
-# Number of time windows for each participant and event type
-t <- count(training, num_window, classe, user_name);
+- Number of NAs per feature
+- Which features seem to be most important based on documentation?
 
-# Number of new windows for each user and classe
-t2 <- training %>% filter(new_window=="yes") %>% count(classe, user_name);
+### Feature selection/engineering 
 
-ggplot(data=t2, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_point()
+- Normalizing features? (centering and scaling, box-cox)
+- Imputing missing values?
+- Identify outliers?
+- Strongly correlated values?
+
+- PCA analysis? 
+- Use user_name as predictor? Or to standardize? 
+
+### Choice of algorithm 
+Not a linerar relationship between predictors and outcome => not regression. 
+
+- Decision trees? 
+- knn?
+
+### Fitting model 
+
+- cross validation
+- make tree model using rpart to understand data better? 
+
+
+
+
+
+```{r standardGBM, echo=FALSE, cache=TRUE, message=FALSE}
+
+# fit standard gbm models 
+# use multiple cores
+registerDoParallel(cores=2)
+
+# Use 5-fold cross validation instead of boosting to save time and prevent bias 
+fit_pca    <- train(training,training.class, method="gbm", 
+                    trControl = trainControl(method = "cv", number = 5), 
+                    preProcess = "pca")
+fit_org<- train(training, training.class, method="gbm", 
+                trControl = trainControl(method = "cv", number = 5))
+fit_scale<- train(training, training.class, method="gbm", 
+                  trControl = trainControl(method = "cv", number = 5), 
+                  preProcess = c("center","scale"))
+
+fit_rf <- train(training, training.class, method="rf", 
+                trControl = trainControl(method = "cv", number = 5))
+
+# Look at insample accuraccy 
+kable(fit_org$results, caption="GBM model with standard parameters")
+kable(fit_pca$results, caption="GBM model using principal components")
+kable(fit_scale$results, caption="GBM model using scaling")
+kable(fit_rf$results, caption="Random forest model with standard parameters")
+# Random forests look really good
+
+# Why does PCA make everything so much worse?
+# plot top 5 variables chosen by non_pca method
+head(summary(non_pca),10)
 
 ```
 
-```{r armMoves, echo=FALSE, cache=TRUE}
+```{r tuneModels, echo=FALSE, cache=TRUE}
+# Fit several random tree models using different input parameters, use cross valdiation to determine quality of models
 
-arm<-training[,grep("_arm",names(training))]
-forearm<-training[,grep("forearm",names(training))]
-dumbbell<-training[,grep("dumbbell",names(training))]
-belt<-training[,grep("belt",names(training))]
+# 1. How many trees do I need to fit? 
+gbmGrid <-  expand.grid(interaction.depth = 3,
+                        n.trees = c(100,200,300,400,500),
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
 
-summary(prc)
-prc<-prcomp(training[,-c(1,2,55)])
-pc <- as.data.frame(prc$x[,1:10])
-pc$user_name <- training$user_name;
-pc$classe <- training$classe
-ggplot(pc, aes(x=PC1, y=PC2, col=classe))+geom_point()+ facet_grid(. ~ classe)
-ggplot(pc, aes(x=PC3, y=PC4, col=classe))+geom_point()+ facet_grid(. ~ classe)
-ggplot(pc, aes(x=PC5, y=PC6, col=classe))+geom_point()+ facet_grid(. ~ classe)
+fit_nTrees<- train(training, training.class, 
+                 method="gbm", 
+                 trControl = trainControl(method = "cv", number = 5),
+                 tuneGrid = gbmGrid, 
+                 verbose=FALSE)
 
-prc<-prcomp(arm)
-pc <- as.data.frame(prc$x[,1:2])
-pc$user_name <- training$user_name;
-pc$classe <- training$classe
-g1<- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
+# 2. What is the most appropriate interaction depth?
+gbmGrid <-  expand.grid(interaction.depth = c(1,2,3,4,5),
+                        n.trees = c(200),
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
 
-prc<-prcomp(forearm)
-pc <- as.data.frame(prc$x[,1:2])
-pc$user_name <- training$user_name;
-pc$classe <- training$classe
-g2 <- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
+fit_depth<- train(training, training.class, 
+                 method="gbm", 
+                 trControl = trainControl(method = "cv", number = 5),
+                 tuneGrid = gbmGrid, 
+                 verbose=FALSE)
 
-prc<-prcomp(dumbbell)
-pc <- as.data.frame(prc$x[,1:2])
-pc$user_name <- training$user_name;
-pc$classe <- training$classe
-g3 <- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
+# 3. Best value for shrinkage?
+gbmGrid <-  expand.grid(interaction.depth = 3,
+                        n.trees = 200,
+                        shrinkage = c(0.25, 0.1, 0.05),
+                        n.minobsinnode = 10)
 
-prc<-prcomp(belt)
-pc <- as.data.frame(prc$x[,1:2])
-pc$user_name <- training$user_name;
-pc$classe <- training$classe
-g4 <- ggplot(pc, aes(x=PC1, y=PC2, col=user_name))+geom_point()+facet_grid(. ~ classe)
+fit_shrink<- train(training, training.class, 
+                 method="gbm", 
+                 trControl = trainControl(method = "cv", number = 5),
+                 tuneGrid = gbmGrid, 
+                 verbose=FALSE)
 
-grid.arrange(g1, g2, g3, g4, nrow=2)
+
+# 3b. Best value for shrinkage?
+gbmGrid <-  expand.grid(interaction.depth = 3,
+                        n.trees = 500,
+                        shrinkage = c(0.25, 0.1, 0.05),
+                        n.minobsinnode = 10)
+
+fit_shrink_n500<- train(training, training.class, 
+                 method="gbm", 
+                 trControl = trainControl(method = "cv", number = 5),
+                 tuneGrid = gbmGrid, 
+                 verbose=FALSE)
+
+
+# 4. Minimum node size: 10 
+gbmGrid <-  expand.grid(interaction.depth = 3,
+                        n.trees = 200,
+                        shrinkage = c(0.1),
+                        n.minobsinnode = c(5,10,20))
+
+fit_node<- train(training, training.class, 
+                 method="gbm", 
+                 trControl = trainControl(method = "cv", number = 5),
+                 tuneGrid = gbmGrid)
+
+# Plot results from all fits
+g1 <- ggplot(fit_depth)
+g2 <- ggplot(fit_node)
+g3 <- ggplot(fit_shrink_n500)
+g4 <- ggplot(fit_nTrees)
+library(gridExtra)
+
+grid.arrange(g1,g2,g3,g4)
+
+# 5. Final model
+gbmGrid <-  expand.grid(interaction.depth = 5,
+                        n.trees = 500,
+                        shrinkage = 0.25,
+                        n.minobsinnode = 10)
+
+fit_gmb_final<- train(training, training.class, 
+                 method="gbm", 
+                 trControl = trainControl(method = "cv", number = 5),
+                 verbose=FALSE,
+                 tuneGrid = gbmGrid)
+
+fit_rf <- train(training, training.class, method="rf", 
+                trControl = trainControl(method = "cv", number = 5),
+                allowParallel=TRUE,
+                prox=TRUE)
 
 ```
 
+## Selecting final model
 
+The model with the highest accuracy from cross-validation is the GBM model. When I apply it to the dataset reserved for testing it gives an accuraccy of X. Based on this, I estimate the out-of-sample error to be: 
+
+```{r comparePerformance, echo=FALSE, cache=TRUE}
+fit_gmb_final$results
+fit_rf$results
+
+fit_rf$finalModel
+confusionMatrix(fit_gmb_final)
+confusionMatrix(fit_rf)
+
+# Test both models on test dataset
+
+pred_gbm <- predict(fit_gmb_final, newdata=testing)
+pred_rf  <- predict(fit_rf, newdata=testing)
+
+confusionMatrix(pred_gbm, testing.class)
+confusionMatrix(pred_rf, testing.class)
+
+mean(pred_rf==testing.class)
+mean(pred_gbm==testing.class)
+```
+
+## Applying to test cases
+
+```{r loadTest, echo=FALSE, cache=TRUE, message=FALSE}
+if (!file.exists("pml-training.csv")){
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","pml-testing.csv")
+}
+tests<- read.csv("pml-testing.csv", header = TRUE, na.strings = c("","NA"))
+tests.id <- tests$problem_id;
+tests$problem_id <- NULL;
+
+tests <- removeColumns(tests)
+tests <- tests[,missing==0]
+tests <- tests[,-correlated]
+tests <- sapply(tests,as.numeric);
+
+pred_submission<- predict(fit_gmb_final, newdata=tests)
+levels(pred_submission)<- c("A", "B", "C", "D", "E")
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(pred_submission)
+```
