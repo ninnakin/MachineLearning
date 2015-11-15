@@ -10,8 +10,9 @@ The goal of your project is to predict the manner in which they did the exercise
 ## Introduction 
 The aim of this project is to classify a number of performed excercises as correctly or incorrectly executed. If incorrectly executed, I will identify in which if four possible ways they are faulting. 
 
-```{r libraries, echo=FALSE, cache=TRUE, message=FALSE}
+```{r libraries, echo=FALSE, message=FALSE}
 library(caret)
+library(plyr)
 library(dplyr)
 library(gridExtra)
 library(doParallel)
@@ -25,7 +26,7 @@ library(gridExtra)
 ## Data 
 This project uses the weight lifting excercise dataset collected by [Vellosso et al] (http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201) which includes measurements of arm, forearm, hip and dumbbell movements while performing a weightlifting excercise. The excercises are classified as correctly (class A) performed or wrongly performed in one of the following ways: throwing the elbows to the front (class B), lifting the dumbbell only halfway (class C), lowering the dumbbell only halfway (class D) and throwing the hips to the front (class E).
 
-```{r loadData, echo=FALSE, cache=TRUE, message=FALSE}
+```{r loadData, echo=FALSE, message=FALSE}
 if (!file.exists("pml-training.csv")){
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","pml-training.csv")
 }
@@ -37,9 +38,9 @@ levels(pml_data$classe)<-c("Correct", "ElbowsFront", "LiftHalf", "LowHalf", "Hip
 ## Creating the predictive model
 
 ### Test and training set
-I divided the 19622 samples into a training set (60% of samples) and a testin set (40% of samples). Exploratory analysis was then performed on the samples in the training set. 
+I divided the 19622 samples into a training set (60% of samples) and a testing set (40% of samples). Exploratory analysis was then performed on the samples in the training set. 
 
-```{r createSets, echo=FALSE, cache=TRUE, message=FALSE}
+```{r createSets, echo=TRUE, message=FALSE}
 # Divide data into training and testing set 
 set.seed(1000)
 inTrain = createDataPartition(pml_data$classe, p = 0.6)[[1]]
@@ -51,13 +52,13 @@ testing  = pml_data[-inTrain,]
 ### Exploratory analysis 
 
 
-```{r explore, echo=FALSE}
+```{r explore, echo=TRUE, results=FALSE}
 names(training)
 summary(training)
 str(training)
 ```
 
-```{r windows, echo=FALSE, cache=TRUE}
+```{r windows, echo=FALSE, cache=TRUE, fig.height=4, fig.width=8}
 
 # Number of time windows for each participant and event type
 t <- count(training, num_window, classe, user_name);
@@ -103,7 +104,7 @@ training$classe<-NULL;
 
 Look for missing values in the data. Some oclumns have almost only NAs. A look at these columns tells me that these measurements are the ones that are reported only ones per time series, for example the standard deviation of a particular measurement. Since I am not using the time series data and will no know which time series the values in the test data are from, I will exclude these values from the dataset. 
 
-```{r NAs, echo=FALSE, cache=TRUE, message=FALSE}
+```{r NAs, echo=TRUE, cache=TRUE, message=FALSE, fig.width=4}
 # Identify missing values
 missing <- apply(training, 2, function(x) sum(is.na(x)));
 hist(missing, col="steelblue", main="Frequency of missing values")
@@ -174,8 +175,6 @@ Not a linerar relationship between predictors and outcome => not regression.
 
 - cross validation
 - make tree model using rpart to understand data better? 
-
-
 
 
 
