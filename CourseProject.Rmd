@@ -19,6 +19,7 @@ library(gbm)
 library(randomForest)
 library(foreach)
 library(knitr)
+library(gridExtra)
 ```
 
 ## Data 
@@ -54,13 +55,6 @@ testing  = pml_data[-inTrain,]
 names(training)
 summary(training)
 str(training)
-
-# count NAs
-# Either 0 missing or 19 000, no idea to impute when so much missing, exclude from set instead.
-missing <- apply(training, 2, function(x) sum(is.na(x)));
-
-summary(missing)
-sum(training$new_window=="yes")
 ```
 
 ```{r windows, echo=FALSE, cache=TRUE}
@@ -71,56 +65,12 @@ t <- count(training, num_window, classe, user_name);
 # Number of new windows for each user and classe
 t2 <- training %>% filter(new_window=="yes") %>% count(classe, user_name);
 
-ggplot(data=t2, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_point()
+g1<-ggplot(data=t2, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_point()
+g2<-ggplot(data=t, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_jitter()
 
+grid.arrange(g1,g2, nrow=1)
 ```
 
-```{r processData, echo=FALSE, cache=TRUE, message=FALSE}
-# exclude missing values and time data
-removeColumns <- function(data){
-    data <- data[,-grep("timestamp",names(data))]
-    data <- data[,-grep("window",names(data))]
-    data <- data[,-grep("user_name",names(data))]
-    data <- data[,-grep("X",names(data))] 
-}
-training <- removeColumns(training)
-
-# remove correlated columns
-training.class <- training$classe
-training$classe<-NULL;
-missing <- apply(training, 2, function(x) sum(is.na(x)));
-training<- training[,missing==0];
-
-numerics <- sapply(training, is.numeric)
-correlationMatrix <- cor(training[,numerics])
-correlated <- findCorrelation(correlationMatrix, cutoff=0.9)
-training <- training[,-correlated]
-training<-sapply(training,as.numeric);
-
-# Transform test data in same way
-testing.class <- testing$classe
-testing$classe<-NULL;
-testing <- removeColumns(testing)
-testing <- testing[,missing==0];
-testing <- testing[,-correlated]
-testing<-sapply(testing,as.numeric);
-```
-
-```{r cor, echo=FALSE, cache=TRUE, message=FALSE}
-
-# identify correlated features 
-correlationMatrix <- cor(training[,1:52])
-correlated <- findCorrelation(correlationMatrix, cutoff=0.9)
-
-# delete feature with correlation>=0.9
-# they provide little extra information and slow down model making 
-```
-
-```{r meanPerClass, echo=FALSE}
-
-means <- training %>% group_by(classe) %>% summarise_each(funs(mean))
-medians <- training %>% group_by(classe) %>% summarise_each(funs(median))
-```
 
 ```{r carlitos, echo=FALSE, cache=TRUE}
 
@@ -133,6 +83,68 @@ head(select(carlitos,raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp,
 carlitos %>% select(raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window) %>% filter(num_window==12)
 ```
 
+
+Remove columns with information about the time window since this will not be used for building the model. Also remove the column containing the user name. 
+
+```{r processData_part1, echo=FALSE, cache=TRUE, message=FALSE}
+# exclude user name and time window columns
+removeColumns <- function(data){
+    data <- data[,-grep("timestamp",names(data))]
+    data <- data[,-grep("window",names(data))]
+    data <- data[,-grep("user_name",names(data))]
+    data <- data[,-grep("X",names(data))] 
+}
+training <- removeColumns(training)
+
+# Store classe in separate variable 
+training.class <- training$classe
+training$classe<-NULL;
+```
+
+Look for missing values in the data. Some oclumns have almost only NAs. A look at these columns tells me that these measurements are the ones that are reported only ones per time series, for example the standard deviation of a particular measurement. Since I am not using the time series data and will no know which time series the values in the test data are from, I will exclude these values from the dataset. 
+
+```{r NAs, echo=FALSE, cache=TRUE, message=FALSE}
+# Identify missing values
+missing <- apply(training, 2, function(x) sum(is.na(x)));
+hist(missing, col="steelblue", main="Frequency of missing values")
+
+# either no missing or almost all missing => no point in imputing values
+names(training[,missing!=0])
+
+# remove columns with NAs
+training<- training[,missing==0];
+```
+
+Continue exploring the remaining data. Are there highly correlated covariates? 
+
+```{r cor, echo=FALSE, cache=TRUE, message=FALSE}
+
+# Check correlation between all numeric variables 
+numerics <- sapply(training, is.numeric)
+correlationMatrix <- cor(training[,numerics])
+correlated <- findCorrelation(correlationMatrix, cutoff=0.9)
+
+head(correlationMatrix[,correlated])
+
+# delete feature with correlation>=0.9
+# they provide little extra information and slow down model making 
+training <- training[,-correlated]
+
+# turn all remaining variables of training into numeric (prevents later errors in prediction function)
+training<-sapply(training,as.numeric);
+```
+
+The training data is now fully processed, let's process the testing data in the same way. I will remove columns with user name and time stamp information, and columns with missing values and correlayed variables (based on column names identified from training data).
+
+```{r processTestData, echo=FALSE, cache=TRUE, message=FALSE}
+# Transform test data in same way as training data
+testing.class <- testing$classe
+testing$classe<-NULL;
+testing <- removeColumns(testing)
+testing <- testing[,missing==0];
+testing <- testing[,-correlated]
+testing<-sapply(testing,as.numeric);
+```
 
 
 To do:
@@ -195,7 +207,7 @@ kable(fit_rf$results, caption="Random forest model with standard parameters")
 
 # Why does PCA make everything so much worse?
 # plot top 5 variables chosen by non_pca method
-head(summary(non_pca),10)
+head(summary(fit_org),10)
 
 ```
 
@@ -332,7 +344,9 @@ tests <- sapply(tests,as.numeric);
 
 pred_submission<- predict(fit_gmb_final, newdata=tests)
 levels(pred_submission)<- c("A", "B", "C", "D", "E")
+```
 
+```{r writeToFile, echo=FALSE, cache=TRUE, message=FALSE}
 pml_write_files = function(x){
   n = length(x)
   for(i in 1:n){
