@@ -1,16 +1,16 @@
 ---
 title: "Course project for machine learning"
 author: "Kristina Juhlin"
-date: "11 november 2015"
+date: "20 November 2015"
 output: html_document
 ---
-## Project  task
-The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
-
 ## Introduction 
-The aim of this project is to classify a number of performed excercises as correctly or incorrectly executed. If incorrectly executed, I will identify in which if four possible ways they are faulting. 
+The aim of this project is to classify a number of performed exercises as correctly or incorrectly executed. If incorrectly executed, I will identify in which of four possible ways they are faulting. 
 
-```{r libraries, echo=FALSE, message=FALSE}
+## Data 
+This project uses the weightlifting exercise data set collected by [Vellosso et al](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201) which includes measurements of arm, forearm, hip and dumbbell movements while performing a weightlifting exercise. The exercises are classified as correctly (class A) performed or wrongly performed in one of the following ways: throwing the elbows to the front (class B), lifting the dumbbell only halfway (class C), lowering the dumbbell only halfway (class D) and throwing the hips to the front (class E).
+
+```{r libraries, echo=TRUE, message=FALSE}
 library(caret)
 library(plyr)
 library(dplyr)
@@ -23,10 +23,7 @@ library(knitr)
 library(gridExtra)
 ```
 
-## Data 
-This project uses the weight lifting excercise dataset collected by [Vellosso et al] (http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201) which includes measurements of arm, forearm, hip and dumbbell movements while performing a weightlifting excercise. The excercises are classified as correctly (class A) performed or wrongly performed in one of the following ways: throwing the elbows to the front (class B), lifting the dumbbell only halfway (class C), lowering the dumbbell only halfway (class D) and throwing the hips to the front (class E).
-
-```{r loadData, echo=FALSE, message=FALSE}
+```{r loadData, echo=TRUE, message=FALSE}
 if (!file.exists("pml-training.csv")){
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","pml-training.csv")
 }
@@ -51,14 +48,15 @@ testing  = pml_data[-inTrain,]
 
 ### Exploratory analysis 
 
+I start by looking at the column names and values of the training set. I then look at the number of exercises per class and the number of time windows per performed exercise. I find that there are around 15 time windows on average for each performed exercise. 
 
-```{r explore, echo=TRUE, results=FALSE}
+```{r explore, echo=TRUE, results="hide"}
 names(training)
 summary(training)
 str(training)
 ```
 
-```{r windows, echo=FALSE, cache=TRUE, fig.height=4, fig.width=8}
+```{r windows, echo=TRUE, cache=TRUE, fig.height=4, fig.width=8, message=FALSE}
 
 # Number of time windows for each participant and event type
 t <- count(training, num_window, classe, user_name);
@@ -66,28 +64,19 @@ t <- count(training, num_window, classe, user_name);
 # Number of new windows for each user and classe
 t2 <- training %>% filter(new_window=="yes") %>% count(classe, user_name);
 
-g1<-ggplot(data=t2, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_point()
-g2<-ggplot(data=t, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_jitter()
+g1<-ggplot(data=t2, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_point()+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+    ggtitle("Excercises per class")
+g2<-ggplot(data=t, aes(x=classe,y=n, fill=classe))+geom_boxplot()+geom_jitter()+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+    ggtitle("Windows per excercise")
 
-grid.arrange(g1,g2, nrow=1)
+#grid.arrange(g1,g2, nrow=1)
 ```
 
+For this project, I will consider all measurements as independent 'snapshots in time' and not take the time stamps into account. Therefore I exclude the columns with time stamp information when building my model. I also remove the column containing the user name and the row id. 
 
-```{r carlitos, echo=FALSE, cache=TRUE}
-
-# look at one activity for one participant
-
-carlitos <- filter(training, user_name=="carlitos" & classe=="A");
-head(select(carlitos,raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window),10)
-
-# Look at one window 
-carlitos %>% select(raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window) %>% filter(num_window==12)
-```
-
-
-Remove columns with information about the time window since this will not be used for building the model. Also remove the column containing the user name. 
-
-```{r processData_part1, echo=FALSE, cache=TRUE, message=FALSE}
+```{r processData_part1, echo=TRUE, cache=TRUE, message=FALSE}
 # exclude user name and time window columns
 removeColumns <- function(data){
     data <- data[,-grep("timestamp",names(data))]
@@ -102,7 +91,7 @@ training.class <- training$classe
 training$classe<-NULL;
 ```
 
-Look for missing values in the data. Some oclumns have almost only NAs. A look at these columns tells me that these measurements are the ones that are reported only ones per time series, for example the standard deviation of a particular measurement. Since I am not using the time series data and will no know which time series the values in the test data are from, I will exclude these values from the dataset. 
+There is a large number of missing values for many of the columns. After investigating this I find that the missing values occur for all time windows that are not marked as 'new'. Further investigation shows that the columns contain missing values are those that would be collected only ones per exercise, such as the mean or standard deviation of the measurements of a certain variable for the performed exercise. Since the timing will not be taken into account these columns are removed. 
 
 ```{r NAs, echo=TRUE, cache=TRUE, message=FALSE, fig.width=4}
 # Identify missing values
@@ -110,34 +99,35 @@ missing <- apply(training, 2, function(x) sum(is.na(x)));
 hist(missing, col="steelblue", main="Frequency of missing values")
 
 # either no missing or almost all missing => no point in imputing values
-names(training[,missing!=0])
+names(training[,missing>0])
 
 # remove columns with NAs
 training<- training[,missing==0];
 ```
 
-Continue exploring the remaining data. Are there highly correlated covariates? 
+Now that all non-numeric variables and columns with NAs are removed I compute the correlation between the remaining variables. For highly correlated variables it is generally better to include only one in the model since they contain more or less the same information. I identify and exclude variables with an absolute value of the correlation of more than 0.9. 
 
-```{r cor, echo=FALSE, cache=TRUE, message=FALSE}
+```{r cor, echo=TRUE, cache=TRUE, message=FALSE}
 
 # Check correlation between all numeric variables 
 numerics <- sapply(training, is.numeric)
 correlationMatrix <- cor(training[,numerics])
 correlated <- findCorrelation(correlationMatrix, cutoff=0.9)
 
-head(correlationMatrix[,correlated])
+# correlated columns
+names(training[,correlated])
 
-# delete feature with correlation>=0.9
+# delete feature with correlation>0.9
 # they provide little extra information and slow down model making 
-training <- training[,-correlated]
+training <- training[,-correlated];
 
 # turn all remaining variables of training into numeric (prevents later errors in prediction function)
 training<-sapply(training,as.numeric);
 ```
 
-The training data is now fully processed, let's process the testing data in the same way. I will remove columns with user name and time stamp information, and columns with missing values and correlayed variables (based on column names identified from training data).
+The training data is now fully processed, let's process the testing data in the same way. I will remove columns with user name and time stamp information, and columns with missing values and correlated variables (based on column names identified from training data).
 
-```{r processTestData, echo=FALSE, cache=TRUE, message=FALSE}
+```{r processTestData, echo=TRUE, cache=TRUE, message=FALSE, results="hide"}
 # Transform test data in same way as training data
 testing.class <- testing$classe
 testing$classe<-NULL;
@@ -147,38 +137,13 @@ testing <- testing[,-correlated]
 testing<-sapply(testing,as.numeric);
 ```
 
+## Fitting the model
+I use the training data to fit a number of models and measure their in-sample error rates. Based on this I will select a smaller number of well-performing  models and use the test data set to estimate their out-of-sample error. 
 
-To do:
+### Algorithm type 
+I choose to fit two types of models, one random forest model and one gradient boosting machine (GBM) model. First, I fit four models, one GBM with standard parameters, one GBM with scaling of variables, one GBM using PCA preprocessing and one random forest model with standard parameters. For all models I use five-fold cross validation for training and estimating the accuracy. I then compare the models to find the ones that gives the highest accuracy. The results for these four models can be found in tables 1-4. 
 
-### Explore 
-
-- Number of NAs per feature
-- Which features seem to be most important based on documentation?
-
-### Feature selection/engineering 
-
-- Normalizing features? (centering and scaling, box-cox)
-- Imputing missing values?
-- Identify outliers?
-- Strongly correlated values?
-
-- PCA analysis? 
-- Use user_name as predictor? Or to standardize? 
-
-### Choice of algorithm 
-Not a linerar relationship between predictors and outcome => not regression. 
-
-- Decision trees? 
-- knn?
-
-### Fitting model 
-
-- cross validation
-- make tree model using rpart to understand data better? 
-
-
-
-```{r standardGBM, echo=FALSE, cache=TRUE, message=FALSE}
+```{r standardGBM, echo=TRUE, cache=TRUE, message=FALSE}
 
 # fit standard gbm models 
 # use multiple cores
@@ -186,31 +151,35 @@ registerDoParallel(cores=2)
 
 # Use 5-fold cross validation instead of boosting to save time and prevent bias 
 fit_pca    <- train(training,training.class, method="gbm", 
-                    trControl = trainControl(method = "cv", number = 5), 
-                    preProcess = "pca")
+                 trControl = trainControl(method = "cv", number = 5), 
+                 preProcess = "pca", 
+                 verbose=FALSE)
 fit_org<- train(training, training.class, method="gbm", 
-                trControl = trainControl(method = "cv", number = 5))
+                 trControl = trainControl(method = "cv", number = 5), 
+                 verbose=FALSE)
 fit_scale<- train(training, training.class, method="gbm", 
                   trControl = trainControl(method = "cv", number = 5), 
-                  preProcess = c("center","scale"))
+                  preProcess = c("center","scale"), 
+                  verbose=FALSE)
 
 fit_rf <- train(training, training.class, method="rf", 
                 trControl = trainControl(method = "cv", number = 5))
 
 # Look at insample accuraccy 
-kable(fit_org$results, caption="GBM model with standard parameters")
-kable(fit_pca$results, caption="GBM model using principal components")
-kable(fit_scale$results, caption="GBM model using scaling")
-kable(fit_rf$results, caption="Random forest model with standard parameters")
-# Random forests look really good
-
-# Why does PCA make everything so much worse?
-# plot top 5 variables chosen by non_pca method
-head(summary(fit_org),10)
+kable(fit_org$results, caption="Table 1: GBM model with standard parameters")
+kable(fit_pca$results, caption="Table 2: GBM model using principal components")
+kable(fit_scale$results, caption="Table 3: GBM model using scaling")
+kable(fit_rf$results, caption="Table 4: Random forest model with standard parameters")
 
 ```
 
-```{r tuneModels, echo=FALSE, cache=TRUE}
+For some reason, using PCA preprocessing makes the model perform significantly worse. Scaling the columns values before modeling makes no difference on the result compared to using original values. The random forest model performs really well with an accuracy of  99%. The standard GBM with 150 trees and interaction depth of three has an accuracy of 96%. I will see if I can improve this by tuning the following GBM parameters:  
+- Interaction depth  
+- Number of trees  
+- Shrinkage  
+- Minimum number of cases in end nodes  
+
+```{r tuneTrees, echo=TRUE, cache=TRUE}
 # Fit several random tree models using different input parameters, use cross valdiation to determine quality of models
 
 # 1. How many trees do I need to fit? 
@@ -224,7 +193,9 @@ fit_nTrees<- train(training, training.class,
                  trControl = trainControl(method = "cv", number = 5),
                  tuneGrid = gbmGrid, 
                  verbose=FALSE)
+```
 
+```{r tuneInteraction, echo=TRUE, cache=TRUE}
 # 2. What is the most appropriate interaction depth?
 gbmGrid <-  expand.grid(interaction.depth = c(1,2,3,4,5),
                         n.trees = c(200),
@@ -236,6 +207,10 @@ fit_depth<- train(training, training.class,
                  trControl = trainControl(method = "cv", number = 5),
                  tuneGrid = gbmGrid, 
                  verbose=FALSE)
+
+```
+
+```{r tuneShrinkage1, echo=TRUE, cache=TRUE}
 
 # 3. Best value for shrinkage?
 gbmGrid <-  expand.grid(interaction.depth = 3,
@@ -249,19 +224,9 @@ fit_shrink<- train(training, training.class,
                  tuneGrid = gbmGrid, 
                  verbose=FALSE)
 
+```
 
-# 3b. Best value for shrinkage?
-gbmGrid <-  expand.grid(interaction.depth = 3,
-                        n.trees = 500,
-                        shrinkage = c(0.25, 0.1, 0.05),
-                        n.minobsinnode = 10)
-
-fit_shrink_n500<- train(training, training.class, 
-                 method="gbm", 
-                 trControl = trainControl(method = "cv", number = 5),
-                 tuneGrid = gbmGrid, 
-                 verbose=FALSE)
-
+```{r tuneNodeSize, echo=TRUE, cache=TRUE}
 
 # 4. Minimum node size: 10 
 gbmGrid <-  expand.grid(interaction.depth = 3,
@@ -272,17 +237,24 @@ gbmGrid <-  expand.grid(interaction.depth = 3,
 fit_node<- train(training, training.class, 
                  method="gbm", 
                  trControl = trainControl(method = "cv", number = 5),
-                 tuneGrid = gbmGrid)
+                 tuneGrid = gbmGrid,
+                 verbose=FALSE)
+```
 
+Plotting the accuracy as a function of the tuned parameters leads me to choose a final GBM model with shrinkage = 0.25, 500 trees, interaction depth = 5 and minimum node size of 10. This model has an in-sample accuracy of 99.2%.  
+
+```{r plotModels, echo=TRUE, cache=TRUE}
 # Plot results from all fits
 g1 <- ggplot(fit_depth)
 g2 <- ggplot(fit_node)
-g3 <- ggplot(fit_shrink_n500)
+g3 <- ggplot(fit_shrink )
 g4 <- ggplot(fit_nTrees)
 library(gridExtra)
 
 grid.arrange(g1,g2,g3,g4)
+```
 
+```{r fitFinal, echo=TRUE, cache=TRUE}
 # 5. Final model
 gbmGrid <-  expand.grid(interaction.depth = 5,
                         n.trees = 500,
@@ -295,40 +267,32 @@ fit_gmb_final<- train(training, training.class,
                  verbose=FALSE,
                  tuneGrid = gbmGrid)
 
-fit_rf <- train(training, training.class, method="rf", 
-                trControl = trainControl(method = "cv", number = 5),
-                allowParallel=TRUE,
-                prox=TRUE)
+kable(fit_gmb_final$results, caption="Table 5: GBM model after tuning")
+```
 
+```{r comparePerformance, echo=TRUE, cache=TRUE}
+kable(fit_rf$results, caption = "Table 6: Random forest model performance")
+
+# Test both models on test dataset
+pred_gbm <- predict(fit_gmb_final, newdata=testing)
+pred_rf  <- predict(fit_rf, newdata=testing)
+
+kable(confusionMatrix(pred_gbm, testing.class)$table)
+confusionMatrix(pred_gbm, testing.class)$overall[1]
+kable(confusionMatrix(pred_rf, testing.class)$table)
+confusionMatrix(pred_rf, testing.class)$overall[1]
 ```
 
 ## Selecting final model
 
-The model with the highest accuracy from cross-validation is the GBM model. When I apply it to the dataset reserved for testing it gives an accuraccy of X. Based on this, I estimate the out-of-sample error to be: 
+The tuned GBM model has slightly higher accuracy (estimated from the cross validation) than the random forest model.
 
-```{r comparePerformance, echo=FALSE, cache=TRUE}
-fit_gmb_final$results
-fit_rf$results
-
-fit_rf$finalModel
-confusionMatrix(fit_gmb_final)
-confusionMatrix(fit_rf)
-
-# Test both models on test dataset
-
-pred_gbm <- predict(fit_gmb_final, newdata=testing)
-pred_rf  <- predict(fit_rf, newdata=testing)
-
-confusionMatrix(pred_gbm, testing.class)
-confusionMatrix(pred_rf, testing.class)
-
-mean(pred_rf==testing.class)
-mean(pred_gbm==testing.class)
-```
+I then test both the GBM model and the random forest model against my testing data set to estimate the out-of-sample error. The estimated out of sample error (calculated as 1-accuracy) is `r round(1-mean(pred_rf==testing.class),3)` for the random forest model and `r round(1-mean(pred_gbm==testing.class),3)` for the GBM model. Based on this I expect my model to perform well against the final 20 test cases. 
 
 ## Applying to test cases
+Lastly, the selected GBM method is applied to the 20 test cases provided for the course submission. The model manages to successfully predict all 20 cases. 
 
-```{r loadTest, echo=FALSE, cache=TRUE, message=FALSE}
+```{r loadTest, echo=TRUE, cache=TRUE, message=FALSE}
 if (!file.exists("pml-training.csv")){
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","pml-testing.csv")
 }
@@ -345,7 +309,7 @@ pred_submission<- predict(fit_gmb_final, newdata=tests)
 levels(pred_submission)<- c("A", "B", "C", "D", "E")
 ```
 
-```{r writeToFile, echo=FALSE, cache=TRUE, message=FALSE}
+```{r writeToFile, echo=TRUE, cache=TRUE, message=FALSE}
 pml_write_files = function(x){
   n = length(x)
   for(i in 1:n){
