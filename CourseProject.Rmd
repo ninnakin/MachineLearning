@@ -267,20 +267,15 @@ fit_gmb_final<- train(training, training.class,
                  verbose=FALSE,
                  tuneGrid = gbmGrid)
 
-kable(fit_gmb_final$results, caption="Table 5: GBM model after tuning")
+kable(fit_gmb_final$results, caption="Table 5: GBM model after tuning, performance on training data")
 ```
 
 ```{r comparePerformance, echo=TRUE, cache=TRUE}
-kable(fit_rf$results, caption = "Table 6: Random forest model performance")
+kable(fit_rf$results, caption = "Table 6: Random forest model performance on training data")
 
 # Test both models on test dataset
 pred_gbm <- predict(fit_gmb_final, newdata=testing)
 pred_rf  <- predict(fit_rf, newdata=testing)
-
-kable(confusionMatrix(pred_gbm, testing.class)$table)
-confusionMatrix(pred_gbm, testing.class)$overall[1]
-kable(confusionMatrix(pred_rf, testing.class)$table)
-confusionMatrix(pred_rf, testing.class)$overall[1]
 ```
 
 ## Selecting final model
@@ -288,6 +283,13 @@ confusionMatrix(pred_rf, testing.class)$overall[1]
 The tuned GBM model has slightly higher accuracy (estimated from the cross validation) than the random forest model.
 
 I then test both the GBM model and the random forest model against my testing data set to estimate the out-of-sample error. The estimated out of sample error (calculated as 1-accuracy) is `r round(1-mean(pred_rf==testing.class),3)` for the random forest model and `r round(1-mean(pred_gbm==testing.class),3)` for the GBM model. Based on this I expect my model to perform well against the final 20 test cases. 
+
+```{r displayPerformance, echo=TRUE, cache=TRUE}
+kable(confusionMatrix(pred_gbm, testing.class)$table, caption = "Table 7: GBM performance on testing data")
+confusionMatrix(pred_gbm, testing.class)$overall[1]
+kable(confusionMatrix(pred_rf, testing.class)$table, caption = "Table 8: Random forest performancce on testing data")
+confusionMatrix(pred_rf, testing.class)$overall[1]
+```
 
 ## Applying to test cases
 Lastly, the selected GBM method is applied to the 20 test cases provided for the course submission. The model manages to successfully predict all 20 cases. 
