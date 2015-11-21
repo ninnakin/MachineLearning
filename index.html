@@ -709,9 +709,9 @@ fit_gmb_final&lt;- train(training, training.class,
                  verbose=FALSE,
                  tuneGrid = gbmGrid)
 
-kable(fit_gmb_final$results, caption=&quot;Table 5: GBM model after tuning&quot;)</code></pre>
+kable(fit_gmb_final$results, caption=&quot;Table 5: GBM model after tuning, performance on training data&quot;)</code></pre>
 <table>
-<caption>Table 5: GBM model after tuning</caption>
+<caption>Table 5: GBM model after tuning, performance on training data</caption>
 <thead>
 <tr class="header">
 <th align="right">interaction.depth</th>
@@ -730,16 +730,16 @@ kable(fit_gmb_final$results, caption=&quot;Table 5: GBM model after tuning&quot;
 <td align="right">500</td>
 <td align="right">0.25</td>
 <td align="right">10</td>
-<td align="right">0.9921872</td>
-<td align="right">0.9901181</td>
-<td align="right">0.0018184</td>
-<td align="right">0.0022999</td>
+<td align="right">0.9918474</td>
+<td align="right">0.9896878</td>
+<td align="right">0.002467</td>
+<td align="right">0.0031212</td>
 </tr>
 </tbody>
 </table>
-<pre class="r"><code>kable(fit_rf$results, caption = &quot;Table 6: Random forest model performance&quot;)</code></pre>
+<pre class="r"><code>kable(fit_rf$results, caption = &quot;Table 6: Random forest model performance on training data&quot;)</code></pre>
 <table>
-<caption>Table 6: Random forest model performance</caption>
+<caption>Table 6: Random forest model performance on training data</caption>
 <thead>
 <tr class="header">
 <th align="right">mtry</th>
@@ -775,10 +775,16 @@ kable(fit_gmb_final$results, caption=&quot;Table 5: GBM model after tuning&quot;
 </table>
 <pre class="r"><code># Test both models on test dataset
 pred_gbm &lt;- predict(fit_gmb_final, newdata=testing)
-pred_rf  &lt;- predict(fit_rf, newdata=testing)
-
-kable(confusionMatrix(pred_gbm, testing.class)$table)</code></pre>
+pred_rf  &lt;- predict(fit_rf, newdata=testing)</code></pre>
+</div>
+</div>
+<div id="selecting-final-model" class="section level2">
+<h2>Selecting final model</h2>
+<p>The tuned GBM model has slightly higher accuracy (estimated from the cross validation) than the random forest model.</p>
+<p>I then test both the GBM model and the random forest model against my testing data set to estimate the out-of-sample error. The estimated out of sample error (calculated as 1-accuracy) is 0.01 for the random forest model and 0.007 for the GBM model. Based on this I expect my model to perform well against the final 20 test cases.</p>
+<pre class="r"><code>kable(confusionMatrix(pred_gbm, testing.class)$table, caption = &quot;Table 7: GBM performance on testing data&quot;)</code></pre>
 <table>
+<caption>Table 7: GBM performance on testing data</caption>
 <thead>
 <tr class="header">
 <th align="left"></th>
@@ -792,35 +798,35 @@ kable(confusionMatrix(pred_gbm, testing.class)$table)</code></pre>
 <tbody>
 <tr class="odd">
 <td align="left">Correct</td>
-<td align="right">2229</td>
-<td align="right">15</td>
+<td align="right">2231</td>
+<td align="right">12</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="right">0</td>
 </tr>
 <tr class="even">
 <td align="left">ElbowsFront</td>
-<td align="right">3</td>
-<td align="right">1495</td>
-<td align="right">4</td>
-<td align="right">0</td>
 <td align="right">1</td>
+<td align="right">1501</td>
+<td align="right">10</td>
+<td align="right">0</td>
+<td align="right">3</td>
 </tr>
 <tr class="odd">
 <td align="left">LiftHalf</td>
 <td align="right">0</td>
-<td align="right">7</td>
-<td align="right">1361</td>
-<td align="right">16</td>
+<td align="right">5</td>
+<td align="right">1356</td>
+<td align="right">12</td>
 <td align="right">0</td>
 </tr>
 <tr class="even">
 <td align="left">LowHalf</td>
 <td align="right">0</td>
-<td align="right">1</td>
-<td align="right">3</td>
-<td align="right">1268</td>
-<td align="right">7</td>
+<td align="right">0</td>
+<td align="right">2</td>
+<td align="right">1272</td>
+<td align="right">5</td>
 </tr>
 <tr class="odd">
 <td align="left">HipsFront</td>
@@ -834,9 +840,10 @@ kable(confusionMatrix(pred_gbm, testing.class)$table)</code></pre>
 </table>
 <pre class="r"><code>confusionMatrix(pred_gbm, testing.class)$overall[1]</code></pre>
 <pre><code>##  Accuracy 
-## 0.9924802</code></pre>
-<pre class="r"><code>kable(confusionMatrix(pred_rf, testing.class)$table)</code></pre>
+## 0.9933724</code></pre>
+<pre class="r"><code>kable(confusionMatrix(pred_rf, testing.class)$table, caption = &quot;Table 8: Random forest performancce on testing data&quot;)</code></pre>
 <table>
+<caption>Table 8: Random forest performancce on testing data</caption>
 <thead>
 <tr class="header">
 <th align="left"></th>
@@ -859,7 +866,7 @@ kable(confusionMatrix(pred_gbm, testing.class)$table)</code></pre>
 <tr class="even">
 <td align="left">ElbowsFront</td>
 <td align="right">3</td>
-<td align="right">1489</td>
+<td align="right">1490</td>
 <td align="right">10</td>
 <td align="right">0</td>
 <td align="right">0</td>
@@ -867,7 +874,7 @@ kable(confusionMatrix(pred_gbm, testing.class)$table)</code></pre>
 <tr class="odd">
 <td align="left">LiftHalf</td>
 <td align="right">0</td>
-<td align="right">6</td>
+<td align="right">5</td>
 <td align="right">1354</td>
 <td align="right">25</td>
 <td align="right">1</td>
@@ -891,14 +898,8 @@ kable(confusionMatrix(pred_gbm, testing.class)$table)</code></pre>
 </tbody>
 </table>
 <pre class="r"><code>confusionMatrix(pred_rf, testing.class)$overall[1]</code></pre>
-<pre><code>##  Accuracy 
-## 0.9903135</code></pre>
-</div>
-</div>
-<div id="selecting-final-model" class="section level2">
-<h2>Selecting final model</h2>
-<p>The tuned GBM model has slightly higher accuracy (estimated from the cross validation) than the random forest model.</p>
-<p>I then test both the GBM model and the random forest model against my testing data set to estimate the out-of-sample error. The estimated out of sample error (calculated as 1-accuracy) is 0.01 for the random forest model and 0.008 for the GBM model. Based on this I expect my model to perform well against the final 20 test cases.</p>
+<pre><code>## Accuracy 
+## 0.990441</code></pre>
 </div>
 <div id="applying-to-test-cases" class="section level2">
 <h2>Applying to test cases</h2>
